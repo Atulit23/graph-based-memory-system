@@ -456,6 +456,54 @@
             }
         }
 
+        function exportView() {
+            const svgElement = document.getElementById('svg');
+
+            svgElement.querySelectorAll('line').forEach(line => {
+                line.setAttribute("stroke", line.style.stroke || "#666");
+                line.setAttribute("stroke-opacity", line.style.strokeOpacity || "0.3");
+                line.setAttribute("stroke-width", line.style.strokeWidth || "1");
+            });
+
+            svgElement.querySelectorAll('circle').forEach(circle => {
+                circle.setAttribute("fill", circle.style.fill || "#45b7d1");
+                circle.setAttribute("stroke", circle.style.stroke || "#fff");
+                circle.setAttribute("stroke-width", circle.style.strokeWidth || "1");
+            });
+
+            const serializer = new XMLSerializer();
+            const svgString = serializer.serializeToString(svgElement);
+
+            const canvas = document.createElement("canvas");
+            canvas.width = svgElement.clientWidth;
+            canvas.height = svgElement.clientHeight;
+
+            const ctx = canvas.getContext("2d");
+
+            const gradient = ctx.createLinearGradient(0, 0, canvas.width, canvas.height);
+            gradient.addColorStop(0, '#0c0c0c');
+            gradient.addColorStop(0.5, '#1a1a2e');
+            gradient.addColorStop(1, '#16213e');
+            ctx.fillStyle = gradient;
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            const img = new Image();
+            const svgBlob = new Blob([svgString], { type: "image/svg+xml" });
+            const url = URL.createObjectURL(svgBlob);
+
+            img.onload = function () {
+                ctx.drawImage(img, 0, 0);
+                URL.revokeObjectURL(url);
+
+                const pngLink = document.createElement("a");
+                pngLink.download = "memory-graph.png";
+                pngLink.href = canvas.toDataURL("image/png");
+                pngLink.click();
+            };
+
+            img.src = url;
+        }
+
         function loadSampleData() {
             const sampleData = {
                 nodes: [],
