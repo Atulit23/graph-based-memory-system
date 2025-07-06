@@ -1,0 +1,5 @@
+sentence_transformers
+networkx
+spacy
+torch
+transformers

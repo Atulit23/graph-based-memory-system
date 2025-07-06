@@ -1,0 +1,553 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Memory Graph Visualizer</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #0c0c0c, #1a1a2e, #16213e);
+            color: #ffffff;
+            overflow: hidden;
+        }
+
+        #container {
+            display: flex;
+            height: 100vh;
+        }
+
+        #controls {
+            width: 300px;
+            background: rgba(0, 0, 0, 0.8);
+            padding: 20px;
+            border-right: 1px solid #333;
+            overflow-y: auto;
+            backdrop-filter: blur(10px);
+        }
+
+        #visualization {
+            flex: 1;
+            position: relative;
+        }
+
+        .control-group {
+            margin-bottom: 20px;
+        }
+
+        .control-group label {
+            display: block;
+            margin-bottom: 5px;
+            font-size: 12px;
+            color: #aaa;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        input[type="range"] {
+            width: 100%;
+            margin: 5px 0;
+        }
+
+        input[type="file"] {
+            width: 100%;
+            padding: 8px;
+            background: #333;
+            border: 1px solid #555;
+            border-radius: 4px;
+            color: white;
+        }
+
+        button {
+            background: linear-gradient(45deg, #667eea, #764ba2);
+            border: none;
+            padding: 10px 15px;
+            border-radius: 6px;
+            color: white;
+            cursor: pointer;
+            font-size: 12px;
+            margin: 5px 0;
+            width: 100%;
+            transition: all 0.3s ease;
+        }
+
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+        }
+
+        #stats {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+
+        #nodeInfo {
+            background: rgba(0, 0, 0, 0.9);
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            width: 300px;
+            max-height: 400px;
+            overflow-y: auto;
+            padding: 15px;
+            border-radius: 8px;
+            border: 1px solid #333;
+            display: none;
+            backdrop-filter: blur(10px);
+        }
+
+        .node {
+            stroke: #fff;
+            stroke-width: 0.5px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .node:hover {
+            stroke-width: 2px;
+        }
+
+        .link {
+            stroke: #666;
+            stroke-opacity: 0.3;
+            transition: all 0.2s ease;
+        }
+
+        .link.highlighted {
+            stroke: #00ff88;
+            stroke-opacity: 0.8;
+            stroke-width: 2px;
+        }
+
+        .node.highlighted {
+            stroke: #00ff88;
+            stroke-width: 3px;
+        }
+
+        svg {
+            width: 100%;
+            height: 100%;
+        }
+
+        .search-box {
+            width: 100%;
+            padding: 10px;
+            background: #333;
+            border: 1px solid #555;
+            border-radius: 4px;
+            color: white;
+            margin-bottom: 10px;
+        }
+
+        .legend {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            background: rgba(0, 0, 0, 0.8);
+            padding: 15px;
+            border-radius: 8px;
+            font-size: 12px;
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            margin-bottom: 5px;
+        }
+
+        .legend-color {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            margin-right: 8px;
+        }
+    </style>
+</head>
+<body>
+    <div id="container">
+        <div id="controls">
+            <h3 style="margin-top: 0; color: #00ff88;">Memory Graph</h3>
+            
+            <div class="control-group">
+                <label>Load Graph Data</label>
+                <input type="file" id="fileInput" accept=".json">
+                <button onclick="loadSampleData()">Load Sample Data</button>
+            </div>
+
+            <div id="stats">
+                <div><strong>Nodes:</strong> <span id="nodeCount">0</span></div>
+                <div><strong>Edges:</strong> <span id="edgeCount">0</span></div>
+                <div><strong>Visible:</strong> <span id="visibleCount">0</span></div>
+            </div>
+
+            <div class="control-group">
+                <label>Search Nodes</label>
+                <input type="text" class="search-box" id="searchBox" placeholder="Search text content...">
+            </div>
+
+            <div class="control-group">
+                <label>Node Size: <span id="nodeSizeValue">3</span></label>
+                <input type="range" id="nodeSize" min="1" max="10" value="3">
+            </div>
+
+            <div class="control-group">
+                <label>Edge Threshold: <span id="edgeThresholdValue">0.5</span></label>
+                <input type="range" id="edgeThreshold" min="0" max="1" step="0.01" value="0.5">
+            </div>
+
+            <div class="control-group">
+                <label>Max Edges: <span id="maxEdgesValue">1000</span></label>
+                <input type="range" id="maxEdges" min="100" max="5000" step="100" value="1000">
+            </div>
+
+            <div class="control-group">
+                <label>Charge Strength: <span id="chargeValue">-100</span></label>
+                <input type="range" id="charge" min="-500" max="-10" value="-100">
+            </div>
+
+            <div class="control-group">
+                <button onclick="centerGraph()">Center Graph</button>
+                <button onclick="togglePhysics()">Toggle Physics</button>
+                <button onclick="exportView()">Export PNG</button>
+            </div>
+        </div>
+
+        <div id="visualization">
+            <svg id="svg"></svg>
+            <div id="nodeInfo">
+                <h4 id="nodeTitle">Node Details</h4>
+                <div id="nodeContent"></div>
+            </div>
+            <div class="legend">
+                <div class="legend-item">
+                    <div class="legend-color" style="background: #ff6b6b;"></div>
+                    <span>High Similarity (>0.8)</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background: #4ecdc4;"></div>
+                    <span>Medium Similarity (0.6-0.8)</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background: #45b7d1;"></div>
+                    <span>Low Similarity (<0.6)</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let graphData = { nodes: [], links: [] };
+        let simulation;
+        let svg, g, node, link;
+        let physicsEnabled = true;
+        let selectedNode = null;
+
+        function initVisualization() {
+            const container = d3.select("#visualization");
+            svg = d3.select("#svg");
+            
+            svg.selectAll("*").remove();
+            
+            const zoom = d3.zoom()
+                .scaleExtent([0.1, 10])
+                .on("zoom", (event) => {
+                    g.attr("transform", event.transform);
+                });
+            
+            svg.call(zoom);
+            
+            g = svg.append("g");
+            
+            const linkGroup = g.append("g").attr("class", "links");
+            const nodeGroup = g.append("g").attr("class", "nodes");
+            
+            simulation = d3.forceSimulation()
+                .force("link", d3.forceLink().id(d => d.id).distance(50))
+                .force("charge", d3.forceManyBody().strength(-100))
+                .force("center", d3.forceCenter(window.innerWidth/2, window.innerHeight/2))
+                .force("collision", d3.forceCollide().radius(10));
+        }
+
+        function updateVisualization() {
+            if (!graphData.nodes.length) return;
+            
+            const edgeThreshold = parseFloat(document.getElementById('edgeThreshold').value);
+            const maxEdges = parseInt(document.getElementById('maxEdges').value);
+            
+            let filteredLinks = graphData.links
+                .filter(d => d.weight >= edgeThreshold)
+                .sort((a, b) => b.weight - a.weight)
+                .slice(0, maxEdges);
+            
+            document.getElementById('visibleCount').textContent = 
+                `${graphData.nodes.length} nodes, ${filteredLinks.length} edges`;
+            
+            link = g.select(".links")
+                .selectAll("line")
+                .data(filteredLinks, d => `${d.source.id || d.source}-${d.target.id || d.target}`);
+            
+            link.exit().remove();
+            
+            link = link.enter()
+                .append("line")
+                .attr("class", "link")
+                .merge(link)
+                .style("stroke-width", d => Math.sqrt(d.weight * 3));
+            
+            const nodeSize = parseFloat(document.getElementById('nodeSize').value);
+            
+            node = g.select(".nodes")
+                .selectAll("circle")
+                .data(graphData.nodes, d => d.id);
+            
+            node.exit().remove();
+            
+            node = node.enter()
+                .append("circle")
+                .attr("class", "node")
+                .attr("r", nodeSize)
+                .style("fill", d => getNodeColor(d))
+                .call(d3.drag()
+                    .on("start", dragstarted)
+                    .on("drag", dragged)
+                    .on("end", dragended))
+                .on("click", showNodeInfo)
+                .on("mouseover", highlightNode)
+                .on("mouseout", unhighlightNode)
+                .merge(node);
+            
+            // Update simulation
+            simulation.nodes(graphData.nodes);
+            simulation.force("link").links(filteredLinks);
+            simulation.force("charge").strength(parseFloat(document.getElementById('charge').value));
+            
+            if (physicsEnabled) {
+                simulation.alpha(0.3).restart();
+            }
+            
+            simulation.on("tick", () => {
+                link
+                    .attr("x1", d => d.source.x)
+                    .attr("y1", d => d.source.y)
+                    .attr("x2", d => d.target.x)
+                    .attr("y2", d => d.target.y);
+                
+                node
+                    .attr("cx", d => d.x)
+                    .attr("cy", d => d.y);
+            });
+        }
+
+        function getNodeColor(node) {
+            if (!node.similarity) return "#45b7d1";
+            if (node.similarity > 0.8) return "#ff6b6b";
+            if (node.similarity > 0.6) return "#4ecdc4";
+            return "#45b7d1";
+        }
+
+        function loadGraphData(data) {
+            graphData.nodes = data.nodes.map(node => ({
+                id: node.id,
+                text: node.text || "",
+                embedding: node.embedding || [],
+                timestamp: node.timestamp || "",
+                emotions: node.emotions || [],
+                usage_count: node.usage_count || 0,
+                verification: node.verification || 1.0
+            }));
+            
+            graphData.links = data.edges.map(edge => ({
+                source: edge.source,
+                target: edge.target,
+                weight: edge.weight || 0.5,
+                coactivation: edge.coactivation || 0
+            }));
+            
+            document.getElementById('nodeCount').textContent = graphData.nodes.length;
+            document.getElementById('edgeCount').textContent = graphData.links.length;
+            
+            updateVisualization();
+        }
+
+        function showNodeInfo(event, d) {
+            selectedNode = d;
+            const info = document.getElementById('nodeInfo');
+            const title = document.getElementById('nodeTitle');
+            const content = document.getElementById('nodeContent');
+            
+            title.textContent = `Node: ${d.id.substring(0, 8)}...`;
+            content.innerHTML = `
+                <p><strong>Text:</strong> ${d.text}</p>
+                <p><strong>Timestamp:</strong> ${d.timestamp}</p>
+                <p><strong>Usage Count:</strong> ${d.usage_count}</p>
+                <p><strong>Verification:</strong> ${d.verification}</p>
+                <p><strong>Emotions:</strong> ${JSON.stringify(d.emotions) || 'None'}</p>
+            `;
+            
+            info.style.display = 'block';
+        }
+
+        function highlightNode(event, d) {
+            const connectedNodes = new Set();
+            connectedNodes.add(d.id);
+            
+            link.style("stroke", l => {
+                if (l.source.id === d.id || l.target.id === d.id) {
+                    connectedNodes.add(l.source.id);
+                    connectedNodes.add(l.target.id);
+                    return "#00ff88";
+                }
+                return "#666";
+            }).style("stroke-opacity", l => {
+                return (l.source.id === d.id || l.target.id === d.id) ? 0.8 : 0.1;
+            });
+            
+            node.style("opacity", n => connectedNodes.has(n.id) ? 1 : 0.3);
+        }
+
+        function unhighlightNode() {
+            link.style("stroke", "#666").style("stroke-opacity", 0.3);
+            node.style("opacity", 1);
+        }
+
+        function searchNodes() {
+            const query = document.getElementById('searchBox').value.toLowerCase();
+            if (!query) {
+                node.style("stroke", "#fff").style("stroke-width", "0.5px");
+                return;
+            }
+            
+            node.style("stroke", d => {
+                return d.text.toLowerCase().includes(query) ? "#00ff88" : "#fff";
+            }).style("stroke-width", d => {
+                return d.text.toLowerCase().includes(query) ? "3px" : "0.5px";
+            });
+        }
+
+        function centerGraph() {
+            const bounds = g.node().getBBox();
+            const parent = svg.node().getBoundingClientRect();
+            const fullWidth = parent.width;
+            const fullHeight = parent.height;
+            const width = bounds.width;
+            const height = bounds.height;
+            const midX = bounds.x + width / 2;
+            const midY = bounds.y + height / 2;
+            
+            const scale = 0.85 / Math.max(width / fullWidth, height / fullHeight);
+            const translate = [fullWidth / 2 - scale * midX, fullHeight / 2 - scale * midY];
+            
+            svg.transition()
+                .duration(750)
+                .call(svg.__zoom.transform, d3.zoomIdentity.translate(translate[0], translate[1]).scale(scale));
+        }
+
+        function togglePhysics() {
+            physicsEnabled = !physicsEnabled;
+            if (physicsEnabled) {
+                simulation.alpha(0.3).restart();
+            } else {
+                simulation.stop();
+            }
+        }
+
+        function loadSampleData() {
+            const sampleData = {
+                nodes: [],
+                edges: []
+            };
+            
+            // Generate sample nodes
+            for (let i = 0; i < 100; i++) {
+                sampleData.nodes.push({
+                    id: `node_${i}`,
+                    text: `Sample text content for node ${i}. This represents a chat message or memory.`,
+                    embedding: Array.from({length: 384}, () => Math.random() - 0.5),
+                    timestamp: new Date().toISOString(),
+                    emotions: ['positive', 'neutral'][Math.floor(Math.random() * 2)],
+                    usage_count: Math.floor(Math.random() * 10),
+                    verification: Math.random()
+                });
+            }
+            
+            for (let i = 0; i < 200; i++) {
+                const source = Math.floor(Math.random() * 100);
+                const target = Math.floor(Math.random() * 100);
+                if (source !== target) {
+                    sampleData.edges.push({
+                        source: `node_${source}`,
+                        target: `node_${target}`,
+                        weight: Math.random(),
+                        coactivation: 0
+                    });
+                }
+            }
+            
+            loadGraphData(sampleData);
+        }
+
+        document.getElementById('fileInput').addEventListener('change', function(event) {
+            const file = event.target.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    try {
+                        const data = JSON.parse(e.target.result);
+                        loadGraphData(data);
+                    } catch (error) {
+                        alert('Error parsing JSON file: ' + error.message);
+                    }
+                };
+                reader.readAsText(file);
+            }
+        });
+
+        document.getElementById('searchBox').addEventListener('input', searchNodes);
+        
+        // Control event listeners
+        ['nodeSize', 'edgeThreshold', 'maxEdges', 'charge'].forEach(id => {
+            document.getElementById(id).addEventListener('input', function() {
+                document.getElementById(id + 'Value').textContent = this.value;
+                updateVisualization();
+            });
+        });
+
+        // Drag functions
+        function dragstarted(event, d) {
+            if (!event.active && physicsEnabled) simulation.alphaTarget(0.3).restart();
+            d.fx = d.x;
+            d.fy = d.y;
+        }
+
+        function dragged(event, d) {
+            d.fx = event.x;
+            d.fy = event.y;
+        }
+
+        function dragended(event, d) {
+            if (!event.active && physicsEnabled) simulation.alphaTarget(0);
+            d.fx = null;
+            d.fy = null;
+        }
+
+        document.addEventListener('click', function(event) {
+            if (!event.target.closest('#nodeInfo') && !event.target.closest('.node')) {
+                document.getElementById('nodeInfo').style.display = 'none';
+            }
+        });
+
+        initVisualization();
+        
+        window.addEventListener('resize', function() {
+            const rect = document.getElementById('visualization').getBoundingClientRect();
+            svg.attr('width', rect.width).attr('height', rect.height);
+            simulation.force("center", d3.forceCenter(rect.width/2, rect.height/2));
+        });
+    </script>
+</body>
+</html>
