@@ -297,5 +297,4 @@ results = graph.query("how do you think we can build jarvis & iron man's suit, w
 for node_id, info in results.items():
     print(f"\nNode: {node_id}\nText: {info['text']}")
     for n in info['neighbors']:
-        # print(f"  ↳ Neighbor: {n['id']} | Type: {n['type']} | Text: {n['text']}  | Weight: {n['weight']:.2f}")
         print(f"  ↳ Neighbor: {n['id']} | Text: {n['text']}  | Weight: {n['weight']:.2f}")
