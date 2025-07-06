@@ -6,6 +6,7 @@
 - As we increase the context provided to LLMs, there performance starts to deteriorate. This is the issue this system aims to resolve.
 - So, the solution is that we give the LLM only those chats which are relevant to the current query.
 - This is essentially a graph based system in which an engine creates a graph by treating each chat as a node and the edges between these chats are created based on semantic & symbolic similarity.
+- So, when we get query, we embed it and locate it's nearest neighbors. 
 
 **How to run?**
 
