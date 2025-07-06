@@ -20,6 +20,6 @@
 pip install -r requirements.txt
 python -m spacy download en_core_web_sm
 ```
-- Run **gpt-chats.py**, this will generate combined-chats.json
+- Run **gpt-chats.py**, this will generate combined_chats.json
 - Then run, **superfinal.py**, this will take some time and will generate your graph (a json file).
 - After you have the graph, open **index.html** & select your graph.
