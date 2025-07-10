@@ -11,6 +11,8 @@ from transformers import AutoTokenizer, AutoModelForSequenceClassification
 import torch
 import torch.nn.functional as F
 from collections import Counter
+import random
+import time
 
 class EmotionDetector:
     def __init__(self):
@@ -83,7 +85,7 @@ class MemoryGraph:
 
         filtered_tokens = [t for t in important_tokens if t not in {"able", "available", "possible", "different", "important", "specific", "general", "particular"}]
         keywords = list(set(entities + filtered_tokens))
-        keywords = [kw for kw in keywords if len(kw) >= 4]
+        keywords = [kw for kw in keywords if len(kw) >= 3]
         self.global_keyword_freq.update(keywords)
         return keywords
 
@@ -123,64 +125,68 @@ class MemoryGraph:
         self.embeddings.append((node_id, np.array(embedding)))
         self.total_docs += 1
 
-    def build_edges(self):
-        print("Building semantic edges...")
-        semantic_edges_created = 0
-        for i, (id1, emb1) in tqdm(enumerate(self.embeddings), total=len(self.embeddings)):
-            for j in range(i + 1, len(self.embeddings)):
-                id2, emb2 = self.embeddings[j]
-                sim = np.dot(emb1, emb2)
-                if sim >= self.similarity_threshold:
-                    self.graph.add_edge(id1, id2, weight=sim, type="semantic")
-                    semantic_edges_created += 1
+    def build_edges(self, max_symbolic_edges_per_node=165):
+      print("Building semantic edges...")
+      semantic_edges_created = 0
+      for i, (id1, emb1) in tqdm(enumerate(self.embeddings), total=len(self.embeddings)):
+          for j in range(i + 1, len(self.embeddings)):
+              id2, emb2 = self.embeddings[j]
+              sim = np.dot(emb1, emb2)
+              if sim >= self.similarity_threshold:
+                  self.graph.add_edge(id1, id2, weight=sim, type="semantic")
+                  semantic_edges_created += 1
 
-        print(f"Created {semantic_edges_created} semantic edges")
+      print(f"Created {semantic_edges_created} semantic edges")
 
-        print("Building symbolic edges...")
-        raw_symbolic_edges = []
-        for i, (id1, _) in tqdm(enumerate(self.embeddings), total=len(self.embeddings)):
-            for j in range(i + 1, len(self.embeddings)):
-                id2, _ = self.embeddings[j]
+      print("Building symbolic edges...")
+      symbolic_edges_created = 0
+      node_symbolic_count = Counter()
 
-                kw1 = set(self.graph.nodes[id1]["keywords"])
-                kw2 = set(self.graph.nodes[id2]["keywords"])
-                shared = kw1 & kw2
+      for i, (id1, _) in tqdm(enumerate(self.embeddings), total=len(self.embeddings)):
+          if node_symbolic_count[id1] >= max_symbolic_edges_per_node:
+              continue
 
-                if len(shared) >= 2:
-                    kw_importance = self._calculate_keyword_importance(list(shared))
-                    importance_weight = sum(kw_importance.values())
-                    avg_rarity = importance_weight / len(shared)
+          for j in range(i + 1, len(self.embeddings)):
+              id2, _ = self.embeddings[j]
+              if node_symbolic_count[id2] >= max_symbolic_edges_per_node:
+                  continue
 
-                    if avg_rarity < 0.3:
-                        continue
+              kw1 = set(self.graph.nodes[id1]["keywords"])
+              kw2 = set(self.graph.nodes[id2]["keywords"])
+              shared = kw1 & kw2
 
-                    raw_symbolic_edges.append({
-                        "id1": id1,
-                        "id2": id2,
-                        "shared": list(shared),
-                        "raw_weight": importance_weight
-                    })
+              if len(shared) < 3:
+                  continue
 
-        symbolic_edges_created = 0
-        if raw_symbolic_edges:
-            weights = [e["raw_weight"] for e in raw_symbolic_edges]
-            min_w = min(weights)
-            max_w = max(weights)
-            for e in raw_symbolic_edges:
-                norm_weight = (e["raw_weight"] - min_w) / (max_w - min_w + 1e-6)
-                self.graph.add_edge(
-                    e["id1"],
-                    e["id2"],
-                    weight=norm_weight,
-                    shared_keywords=e["shared"],
-                    type="symbolic"
-                )
-                symbolic_edges_created += 1
+              kw_importance = self._calculate_keyword_importance(list(shared))
+              importance_weight = sum(kw_importance.values())
+              avg_rarity = importance_weight / len(shared)
 
-        print(f"Created {symbolic_edges_created} symbolic edges")
+              if avg_rarity < 0.42:  
+                  continue
+
+              # normalize symbolic weight
+              norm_weight = min(1.0, avg_rarity / 5.0)
+
+              self.graph.add_edge(
+                  id1,
+                  id2,
+                  weight=norm_weight,
+                  shared_keywords=list(shared),
+                  type="symbolic"
+              )
+              symbolic_edges_created += 1
+              node_symbolic_count[id1] += 1
+              node_symbolic_count[id2] += 1
+
+              # Cap the total symbolic edges per node
+              if node_symbolic_count[id1] >= max_symbolic_edges_per_node:
+                  break
+
+      print(f"Created {symbolic_edges_created} symbolic edges (max {max_symbolic_edges_per_node} per node)")
 
 
-    def query(self, input_text, top_k=5, alpha=0.5, beta=0.2, gamma=0.3):
+    def query(self, input_text, top_k=5, alpha=0.6, beta=0.15, gamma=0.25):
       input_embedding = model.encode(input_text, normalize_embeddings=True).astype(np.float32)
       input_emotion = self.ed.detect(input_text)
       input_emotion_vector = np.array(list(input_emotion.values()))
@@ -249,7 +255,7 @@ class MemoryGraph:
 
       return results
 
-    def save_graph(self, path="graph16.json"):
+    def save_graph(self, path="graph20.json"):
         data = nx.node_link_data(self.graph, edges="edges")
         metadata = {
             "global_keyword_freq": dict(self.global_keyword_freq),
@@ -260,7 +266,7 @@ class MemoryGraph:
         with open(path, "w") as f:
             json.dump(cleaned_data, f)
 
-    def load_graph(self, path="graph16.json"):
+    def load_graph(self, path="graph20.json"):
         with open(path, "r") as f:
             data = json.load(f)
         if "metadata" in data:
@@ -270,7 +276,7 @@ class MemoryGraph:
         self.graph = nx.node_link_graph(data, edges="edges")
         self.embeddings = [(n, np.array(d["embedding"], dtype=np.float32)) for n, d in self.graph.nodes(data=True)]
 
-def load_chats_from_json(filepath, graph_path="graph16.json", limit=2563):
+def load_chats_from_json(filepath, graph_path="graph20.json", limit=2600):
     graph = MemoryGraph()
     if os.path.exists(graph_path):
         graph.load_graph(graph_path)
@@ -297,4 +303,5 @@ results = graph.query("how do you think we can build jarvis & iron man's suit, w
 for node_id, info in results.items():
     print(f"\nNode: {node_id}\nText: {info['text']}")
     for n in info['neighbors']:
+        # print(f"  ↳ Neighbor: {n['id']} | Type: {n['type']} | Text: {n['text']}  | Weight: {n['weight']:.2f}")
         print(f"  ↳ Neighbor: {n['id']} | Text: {n['text']}  | Weight: {n['weight']:.2f}")
